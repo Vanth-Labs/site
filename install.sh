@@ -8,7 +8,7 @@
 #      private copy if your system Node is not an LTS with prebuilt native modules
 #   2. NOT the brain: on first run Hannah asks where she should think (Ollama here, installed
 #      in your user folder if you say so, or a provider key), nothing of that runs from here
-#   3. the repos under ~/Hannah-Motion (workspace, backend, motion-lab, desktop)
+#   3. the code under ~/Hannah-Motion (the hannah repo)
 #   4. Node deps for the backend, Python venvs for the sidecars (voice, listening, the watch
 #      sidecar hannah-sense) and the gesture model
 #   5. the weights that are not in git: Kokoro voice (from upstream) and the trained
@@ -25,15 +25,14 @@
 set -euo pipefail
 
 ORG="Vanth-Labs"
-RELEASE_REPO="${ORG}/desktop"
+RELEASE_REPO="${ORG}/hannah"
 ROOT="${HANNAH_HOME:-$HOME/Hannah-Motion}"
 BIN_DIR="$HOME/.local/bin"
 API="https://api.github.com/repos/${RELEASE_REPO}/releases/latest"
 # the gesture model's weights (~400 MB, used by the Python motion server, not by the app):
 # a release of their own so the app release only lists apps
-MODELS_API="https://api.github.com/repos/${ORG}/motion-model/releases/tags/models"
 SITE="https://vanthlabs.org"
-DOCS="https://github.com/${ORG}/workspace#readme"
+DOCS="https://github.com/${ORG}/hannah#readme"
 KOKORO="https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
 
 if [ -t 1 ]; then
@@ -158,24 +157,43 @@ clone() {  # clone <repo> <dir>
   fi
 }
 clone_all() {
-  # the workspace repo IS the root (launcher + docs); the others are its subfolders
-  if [ -d "$ROOT/.git" ]; then (cd "$ROOT" && git pull -q --ff-only || true); echo "workspace updated"
+  # the hannah repo IS the root (launcher, docs, backend/, frontend/, desktop/)
+  if [ -d "$ROOT/.git" ]; then
+    # an install from before the single repo points at the old workspace repo: same history, so a
+    # remote switch and a pull bring the folders in without touching anything else
+    ( cd "$ROOT" && case "$(git remote get-url origin 2>/dev/null)" in
+        *"/${ORG}/workspace"*|*"/Hannah-Motion-Lab/workspace"*) git remote set-url origin "https://github.com/${ORG}/hannah.git" ;;
+      esac
+      git pull -q --ff-only || true )
+    echo "hannah updated"
   else
     rm -rf "$ROOT.tmp"   # a previous run that died mid-clone leaves this behind
-    git clone -q "https://github.com/${ORG}/workspace.git" "$ROOT.tmp" || { echo "could not clone ${ORG}/workspace"; return 1; }
-    cp -a "$ROOT.tmp/." "$ROOT/" && rm -rf "$ROOT.tmp"; echo "workspace cloned"
+    git clone -q "https://github.com/${ORG}/hannah.git" "$ROOT.tmp" || { echo "could not clone ${ORG}/hannah"; return 1; }
+    cp -a "$ROOT.tmp/." "$ROOT/" && rm -rf "$ROOT.tmp"; echo "hannah cloned"
   fi
-  # the frontend is NOT cloned: the AppImage carries it (HANNAH_DEV=1 needs the repo, see SETUP.md);
-  # the agent (hands) comes with `hannah hands on`
-  clone backend      hannah-backend
-  clone motion-model hannah-motion-lab
-  clone desktop      hannah-desktop
+  # the agent (hands) comes with `hannah hands on`; the gesture model is a package, installed below
+  migrate_old_layout
+}
+# Installs from before the single repo had hannah-backend/, hannah-motion-lab/ and
+# hannah-desktop/ as separate clones. What matters to the user moves over (keys, memory, the
+# avatar, the downloaded weights); the old clones stay until the user removes them.
+migrate_old_layout() {
+  local old="$ROOT/hannah-backend" moved=""
+  if [ -d "$old" ]; then
+    [ -f "$old/.env" ] && [ ! -f "$ROOT/backend/.env" ] && cp -p "$old/.env" "$ROOT/backend/.env" && moved="$moved .env"
+    if [ -d "$old/data" ] && [ ! -d "$ROOT/backend/data" ]; then cp -a "$old/data" "$ROOT/backend/data" && moved="$moved data/"; fi
+  fi
+  if [ -d "$ROOT/hannah-motion-lab/runs" ] && [ ! -d "$ROOT/backend/sidecar/gestures/runs" ]; then
+    mkdir -p "$ROOT/backend/sidecar/gestures" && cp -a "$ROOT/hannah-motion-lab/runs" "$ROOT/backend/sidecar/gestures/runs" && moved="$moved weights"
+  fi
+  [ -n "$moved" ] && echo "kept from the previous layout:$moved (old folders hannah-backend/, hannah-motion-lab/, hannah-desktop/ can be deleted)"
+  return 0
 }
 step "code -> $ROOT" clone_all
 
 # ── 4. dependencies ───────────────────────────────────────────────────────────────────
 backend_deps() {
-  cd "$ROOT/hannah-backend"
+  cd "$ROOT/backend"
   # always run: a failed install leaves a partial node_modules, and npm is a fast no-op when complete
   npm install --no-audit --no-fund --no-progress --loglevel=error
   # the SQLite binary must exist for THIS node: an earlier install under another node (or an npm
@@ -199,7 +217,7 @@ step "backend (Node dependencies)" backend_deps
 # (VISION_PROVIDER=yolo) is opt-in through sidecar/requirements-vision-yolo.txt, and the CUDA
 # libs Kokoro/Whisper need are preloaded from the gesture model's venv (sidecar/common.py).
 sidecar_venv() {
-  cd "$ROOT/hannah-backend/sidecar"
+  cd "$ROOT/backend/sidecar"
   if [ ! -x .venv/bin/python ]; then
     if has uv; then uv venv .venv --python 3.12 || uv venv .venv
     else python3 -m venv .venv; fi
@@ -213,7 +231,7 @@ step "voice and listening (Whisper, Kokoro)" sidecar_venv
 # above: that one pins numpy and onnxruntime-gpu for faster-whisper and Kokoro, and letting the
 # system site-packages in would break the voice at runtime and in silence.
 sense_venv() {
-  cd "$ROOT/hannah-backend/sidecar/sense"
+  cd "$ROOT/backend/sidecar/sense"
   if [ ! -x .venv/bin/python ]; then
     if has uv; then uv venv .venv --python 3.12 --system-site-packages || uv venv .venv --system-site-packages
     else python3 -m venv --system-site-packages .venv; fi
@@ -222,7 +240,7 @@ sense_venv() {
 }
 step "watches (hannah-sense)" sense_venv
 motion_venv() {
-  cd "$ROOT/hannah-motion-lab"
+  cd "$ROOT/backend/sidecar/gestures"
   if [ ! -x .venv/bin/python ]; then
     if has uv; then
       uv venv .venv --python 3.12 || uv venv .venv
@@ -235,8 +253,8 @@ motion_venv() {
       else .venv/bin/pip install -q torch --index-url https://download.pytorch.org/whl/cpu; fi
     fi
   fi
-  # every run, not only on creation: a pull can bring a new serving dependency
-  if has uv; then uv pip install -q -p .venv/bin/python -r requirements-serve.txt; else .venv/bin/pip install -q -r requirements-serve.txt; fi
+  # every run, not only on creation: a pull can pin a newer model package
+  if has uv; then uv pip install -q -p .venv/bin/python -r requirements.txt; else .venv/bin/pip install -q -r requirements.txt; fi
 }
 step "gesture model (text -> motion, torch $([ -n "$NVIDIA" ] && echo CUDA || echo CPU); the big one)" motion_venv
 
@@ -256,7 +274,7 @@ dl() {
   fi
   mv -f "$part" "$2"
 }
-( cd "$ROOT/hannah-backend/sidecar/tts"
+( cd "$ROOT/backend/sidecar/tts"
   [ -f kokoro-v1.0.onnx ] || { sub "Kokoro voice model (311 MB)"; dl "$KOKORO/kokoro-v1.0.onnx" kokoro-v1.0.onnx; }
   [ -f voices-v1.0.bin ]  || { sub "Kokoro voices (27 MB)";       dl "$KOKORO/voices-v1.0.bin"  voices-v1.0.bin; }
   sub "voice ✓" )
@@ -268,18 +286,14 @@ sums="$(asset SHA256SUMS)"
 if [ -n "$sums" ]; then curl -fsSL --proto '=https' --tlsv1.2 -o "$tmp/SHA256SUMS" "$sums" || warn "could not fetch SHA256SUMS: downloads will not be verified"
 else warn "this release ships no SHA256SUMS: downloads will not be verified"; fi
 say "gesture model (weights)"
-code="$(curl -fsSL -o "$tmp/models.json" -w '%{http_code}' "$MODELS_API" 2>/dev/null)" || true
-[ "${code:-000}" = "200" ] || die "could not read the models release (HTTP ${code:-network error}). https://github.com/${ORG}/motion-model/releases"
-masset() { grep -o "\"browser_download_url\": *\"[^\"]*$1\"" "$tmp/models.json" | head -n1 | sed 's/.*"\(https[^"]*\)"/\1/'; }
-# swap in the models release's own checksums for these downloads
-mv -f "$tmp/SHA256SUMS" "$tmp/SHA256SUMS.app" 2>/dev/null || true
-msums="$(masset SHA256SUMS)"; [ -n "$msums" ] && curl -fsSL -o "$tmp/SHA256SUMS" "$msums" || warn "the models release ships no SHA256SUMS: weights will not be verified"
-( cd "$ROOT/hannah-motion-lab"
-  mkdir -p runs/vae runs/flow
-  [ -f runs/vae/latest.pt ]  || { sub "gesture model: vae (174 MB)";  dl "$(masset motion-vae-latest.pt)"  runs/vae/latest.pt; }
-  [ -f runs/flow/latest.pt ] || { sub "gesture model: flow (213 MB)"; dl "$(masset motion-flow-latest.pt)" runs/flow/latest.pt; }
+# from huggingface.co/Vanth-Labs/hannah-motion, pinned to a revision inside the package; the Hub
+# verifies each file (LFS sha256) and resumes interrupted downloads
+( cd "$ROOT/backend/sidecar/gestures"
+  if [ -f runs/vae/latest.pt ] && [ -f runs/flow/latest.pt ]; then :; else
+    sub "gesture model: vae + flow (390 MB, from Hugging Face)"
+    MOTIONLAB_RUNS=runs .venv/bin/python -m motionlab.serve --download-only >>"$LOGF" 2>&1 || die "could not download the gesture weights (see $LOGF)"
+  fi
   sub "gestures ✓" )
-[ -f "$tmp/SHA256SUMS.app" ] && mv -f "$tmp/SHA256SUMS.app" "$tmp/SHA256SUMS"
 
 # ── 6. the overlay + launcher on PATH ─────────────────────────────────────────────────
 # (the hands, i.e. the agent + bun, are NOT installed here: `hannah hands on` does it on demand)

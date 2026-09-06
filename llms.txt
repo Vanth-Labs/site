@@ -10,8 +10,8 @@
 
 ## Code
 
-- [Workspace and setup guide](https://github.com/Vanth-Labs/workspace)
-- [Desktop app releases](https://github.com/Vanth-Labs/desktop/releases)
+- [Source and setup guide](https://github.com/Vanth-Labs/hannah)
+- [Desktop app releases](https://github.com/Vanth-Labs/hannah/releases)
 - [Text-to-motion model](https://github.com/Vanth-Labs/motion-model)
 
 ## Contact

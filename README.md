@@ -66,11 +66,11 @@ GitHub Pages serves the root of `main` automatically, push and it's live.
 
 ## How install.sh works
 
-Queries the GitHub API for the latest release of [`Vanth-Labs/desktop`](https://github.com/Vanth-Labs/desktop),
+Queries the GitHub API for the latest release of [`Vanth-Labs/hannah`](https://github.com/Vanth-Labs/hannah),
 downloads the first `*.AppImage` asset into `~/.local/bin/Hannah.AppImage` and makes it
 executable. It refuses gracefully when no release exists yet.
 
-**It only works once a real release is published**: tagging `v*` in `hannah-desktop`
+**It only works once a real release is published**: tagging `v*` in `Vanth-Labs/hannah`
 triggers its CI workflow, which builds and uploads the artifacts.
 
 ## If anything moves

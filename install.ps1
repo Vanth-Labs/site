@@ -28,8 +28,8 @@ function Install-Hannah {
   $Org = 'Vanth-Labs'
   $Root = if ($env:HANNAH_HOME) { $env:HANNAH_HOME } else { Join-Path $env:USERPROFILE 'Hannah-Motion' }
   $Tools = Join-Path $Root '.tools'
-  $Api = "https://api.github.com/repos/$Org/desktop/releases/latest"
-  $Docs = "https://github.com/$Org/workspace/blob/main/SETUP.md#macos-and-windows"
+  $Api = "https://api.github.com/repos/$Org/hannah/releases/latest"
+  $Docs = "https://github.com/$Org/hannah/blob/main/SETUP.md#macos-and-windows"
   $Kokoro = 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0'
 
   function Say($m)  { Write-Host "==> $m" -ForegroundColor Green }
@@ -113,25 +113,38 @@ function Install-Hannah {
     else { git clone -q "https://github.com/$Org/$repo.git" $d; if ($LASTEXITCODE) { throw "could not clone $Org/$repo" }; Write-Output "$dir cloned" }
   }
   Invoke-Step "code -> $Root" {
-    if (Test-Path (Join-Path $Root '.git')) { Push-Location $Root; git pull -q --ff-only 2>$null; Pop-Location; Write-Output 'workspace updated' }
+    # the hannah repo IS the root (launcher, docs, backend\, frontend\, desktop\)
+    if (Test-Path (Join-Path $Root '.git')) {
+      Push-Location $Root
+      $origin = (git remote get-url origin 2>$null)
+      if ($origin -match '/(Vanth-Labs|Hannah-Motion-Lab)/workspace') { git remote set-url origin "https://github.com/$Org/hannah.git" }
+      git pull -q --ff-only 2>$null
+      Pop-Location; Write-Output 'hannah updated'
+    }
     else {
       if (Test-Path "$Root.tmp") { Remove-Item "$Root.tmp" -Recurse -Force }
-      git clone -q "https://github.com/$Org/workspace.git" "$Root.tmp"; if ($LASTEXITCODE) { throw "could not clone $Org/workspace" }
-      Copy-Item "$Root.tmp\*" $Root -Recurse -Force; Remove-Item "$Root.tmp" -Recurse -Force; Write-Output 'workspace cloned'
+      git clone -q "https://github.com/$Org/hannah.git" "$Root.tmp"; if ($LASTEXITCODE) { throw "could not clone $Org/hannah" }
+      Copy-Item "$Root.tmp\*" $Root -Recurse -Force; Remove-Item "$Root.tmp" -Recurse -Force; Write-Output 'hannah cloned'
     }
-    Clone backend      hannah-backend
-    Clone motion-model hannah-motion-lab
+    # installs from before the single repo: keys, memory, avatar and weights move over; old folders stay
+    $old = Join-Path $Root 'hannah-backend'; $moved = @()
+    if (Test-Path $old) {
+      if ((Test-Path "$old\.env") -and -not (Test-Path "$Root\backend\.env")) { Copy-Item "$old\.env" "$Root\backend\.env"; $moved += '.env' }
+      if ((Test-Path "$old\data") -and -not (Test-Path "$Root\backend\data")) { Copy-Item "$old\data" "$Root\backend\data" -Recurse; $moved += 'data' }
+    }
+    if ((Test-Path "$Root\hannah-motion-lab\runs") -and -not (Test-Path "$Root\backend\sidecar\gestures\runs")) { New-Item -ItemType Directory -Force -Path "$Root\backend\sidecar\gestures" | Out-Null; Copy-Item "$Root\hannah-motion-lab\runs" "$Root\backend\sidecar\gestures\runs" -Recurse; $moved += 'weights' }
+    if ($moved.Count) { Write-Output ("kept from the previous layout: " + ($moved -join ', ') + " (old folders hannah-backend and hannah-motion-lab can be deleted)") }
     # the agent (hands) comes with `hannah hands on`; the app carries the frontend
     $global:LASTEXITCODE = 0
   }
   Add-UserPath $Root   # `hannah` (hannah.cmd) is usable from a NEW terminal from this point on
 
   # -- 4. backend + sidecars (CPU) -----------------------------------------------------
-  $back = Join-Path $Root 'hannah-backend'
+  $back = Join-Path $Root 'backend'
   Push-Location $back
   Invoke-Step 'backend (Node dependencies)' {
     # always run: a failed install leaves a partial node_modules, and npm is a fast no-op when complete
-    npm install --no-audit --no-fund --no-progress --loglevel=error; if ($LASTEXITCODE) { throw 'npm install failed in hannah-backend' }
+    npm install --no-audit --no-fund --no-progress --loglevel=error; if ($LASTEXITCODE) { throw 'npm install failed in backend' }
     # the SQLite binary must exist for THIS node: an earlier install under another node leaves
     # node_modules "complete" without it and npm install then does nothing
     if (-not (Test-Path 'node_modules\better-sqlite3\build\Release\better_sqlite3.node')) { npm rebuild better-sqlite3 --no-audit --no-fund --loglevel=error; if ($LASTEXITCODE) { throw 'better-sqlite3 has no binary for this node' } }
@@ -159,7 +172,7 @@ function Install-Hannah {
     uv pip install -q -p .venv\Scripts\python.exe -r requirements.txt; if ($LASTEXITCODE) { throw 'sense dependencies failed' }
   }
   Pop-Location
-  $lab = Join-Path $Root 'hannah-motion-lab'
+  $lab = Join-Path $back 'sidecar\gestures'
   Push-Location $lab
   $nvidia = [bool](Get-Command nvidia-smi -ErrorAction SilentlyContinue)
   Invoke-Step "gesture model (text -> motion, torch $(if ($nvidia) { 'CUDA' } else { 'CPU' }); the big one)" {
@@ -169,28 +182,16 @@ function Install-Hannah {
       else { uv pip install -q -p .venv\Scripts\python.exe torch --index-url https://download.pytorch.org/whl/cpu }
       if ($LASTEXITCODE) { throw 'torch install failed' }
     }
-    # every run, not only on creation: a pull can bring a new serving dependency
-    uv pip install -q -p .venv\Scripts\python.exe -r requirements-serve.txt; if ($LASTEXITCODE) { throw 'motion dependencies failed' }
+    # every run, not only on creation: a pull can pin a newer model package
+    uv pip install -q -p .venv\Scripts\python.exe -r requirements.txt; if ($LASTEXITCODE) { throw 'motion dependencies failed' }
   }
-  $mrel = Invoke-RestMethod "https://api.github.com/repos/$Org/motion-model/releases/tags/models" -UseBasicParsing -ErrorAction Stop
-  $msums = $mrel.assets | Where-Object { $_.name -eq 'SHA256SUMS' } | Select-Object -First 1
-  $sumText = if ($msums) { (Invoke-WebRequest $msums.browser_download_url -UseBasicParsing -ErrorAction Stop).Content } else { '' }
-  function Get-Weight($name, $dest) {
-    if (Test-Path $dest) { return }
-    $a = $mrel.assets | Where-Object { $_.name -eq $name } | Select-Object -First 1
-    if (-not $a) { Die "the models release has no $name" }
-    Sub "gesture model: $name"
-    New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
-    Fetch $a.browser_download_url "$dest.part"
-    if ($sumText) {
-      $want = (($sumText -split "`n" | Where-Object { $_ -match [regex]::Escape($name) + '$' } | Select-Object -First 1) -split '\s+')[0]
-      $got = (Get-FileHash "$dest.part" -Algorithm SHA256).Hash.ToLower()
-      if ($want -and $got -ne $want.ToLower()) { Remove-Item "$dest.part"; Die "checksum mismatch for $name" }
-    }
-    Move-Item -Force "$dest.part" $dest -ErrorAction Stop
+  # weights from huggingface.co/Vanth-Labs/hannah-motion, pinned to a revision inside the package
+  if (-not ((Test-Path 'runs\vae\latest.pt') -and (Test-Path 'runs\flow\latest.pt'))) {
+    Sub 'gesture model: vae + flow (390 MB, from Hugging Face)'
+    $env:MOTIONLAB_RUNS = 'runs'
+    & .venv\Scripts\python.exe -m motionlab.serve --download-only 2>&1 | Out-File -Append $script:LogF
+    if ($LASTEXITCODE) { Die "could not download the gesture weights (see $script:LogF)" }
   }
-  Get-Weight 'motion-vae-latest.pt'  (Join-Path $lab 'runs\vae\latest.pt')
-  Get-Weight 'motion-flow-latest.pt' (Join-Path $lab 'runs\flow\latest.pt')
   Sub 'gestures ok'
   Pop-Location
   Say 'voice model'

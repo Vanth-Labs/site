@@ -1,6 +1,6 @@
 # Hannah: one-command install for Windows 10/11 (x64). No admin needed.
 #
-#   irm https://vanthlabs.org/install.ps1 | iex
+#   irm https://hannah.vanthlabs.org/install.ps1 | iex
 #
 # Everything is installed for YOUR user only, nothing touches Program Files or the registry
 # beyond your own PATH:

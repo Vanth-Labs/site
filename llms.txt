@@ -4,9 +4,9 @@
 
 ## Pages
 
-- [Hannah](https://vanthlabs.org/): what she does, requirements, install command, FAQ
-- [About Vanth Labs](https://vanthlabs.org/about/): what we believe, who we are, how to work with us
-- [Brand and press kit](https://vanthlabs.org/brand/): logos, colors, naming, official paragraph, screenshots
+- [Hannah](https://hannah.vanthlabs.org/): what she does, requirements, install command, FAQ
+- [About Vanth Labs](https://hannah.vanthlabs.org/about/): what we believe, who we are, how to work with us
+- [Brand and press kit](https://hannah.vanthlabs.org/brand/): logos, colors, naming, official paragraph, screenshots
 
 ## Code
 

@@ -1,4 +1,4 @@
-# vanthlabs.org: everything is public. Search engines and AI answer engines are welcome to
+# hannah.vanthlabs.org: everything is public. Search engines and AI answer engines are welcome to
 # read and cite these pages; the same is true of the installers.
 User-agent: *
 Allow: /
@@ -31,4 +31,4 @@ Allow: /
 User-agent: CCBot
 Allow: /
 
-Sitemap: https://vanthlabs.org/sitemap.xml
+Sitemap: https://hannah.vanthlabs.org/sitemap.xml

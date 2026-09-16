@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Hannah installer: the WHOLE companion, not just the window.
 #
-#   curl -fsSL https://vanthlabs.org/install.sh | bash
+#   curl -fsSL https://hannah.vanthlabs.org/install.sh | bash
 #
 # What it sets up, in order (each step is skipped if already done, so re-running is safe):
 #   1. system packages (git, python, uv, unzip) via your distro's package manager; Node 22 as a
@@ -31,7 +31,7 @@ BIN_DIR="$HOME/.local/bin"
 API="https://api.github.com/repos/${RELEASE_REPO}/releases/latest"
 # the gesture model's weights (~400 MB, used by the Python motion server, not by the app):
 # a release of their own so the app release only lists apps
-SITE="https://vanthlabs.org"
+SITE="https://hannah.vanthlabs.org"
 DOCS="https://github.com/${ORG}/hannah#readme"
 KOKORO="https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0"
 

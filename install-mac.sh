@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Hannah: one-command install for macOS (Apple Silicon or Intel). No admin needed.
 #
-#   curl -fsSL https://vanthlabs.org/install-mac.sh | bash
+#   curl -fsSL https://hannah.vanthlabs.org/install-mac.sh | bash
 #
 # What it does, all inside your home folder:
 #   1. tools: Node 22 (private copy if needed), uv (Python 3.12). Not bun: `hannah hands on` brings it

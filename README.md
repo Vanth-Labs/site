@@ -1,7 +1,7 @@
-# site: vanthlabs.org
+# site: hannah.vanthlabs.org
 
 The site of Vanth Labs, the company behind Hannah. Plain HTML/CSS/JS, **no build step, no
-dependencies**. Live at **https://vanthlabs.org/**.
+dependencies**. Live at **https://hannah.vanthlabs.org/**.
 
 ## Pages
 
